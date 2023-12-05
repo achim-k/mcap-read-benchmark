@@ -1,0 +1,4 @@
+{
+  "name": "read_mcap_benchmark",
+  "workspaces": ["web"]
+}

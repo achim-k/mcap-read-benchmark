@@ -1,0 +1,7 @@
+[package]
+name = "read_mcap_rust"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+mcap = "0.9.0"

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>MCAP reading benchmark</title>
+  </head>
+  <body>
+    <noscript
+      >This page contains webassembly and javascript content, please enable
+      javascript in your browser.</noscript
+    >
+  </body>
+  <input type="file" id="file-picker" accept=".mcap" />
+  <br /><br />
+  <div><input type="checkbox" id="checkbox-sequential" /> Run sequential</div>
+  <div>
+    Update progress every
+    <input
+      id="progress-update-after-mb-read"
+      type="number"
+      min="1"
+      max="100"
+      step="0.1"
+      value="1"
+    />
+    MB
+  </div>
+  <div>
+    Fetch WASM messages in bulks of
+    <input
+      id="wasm-fetch-messages-count"
+      type="number"
+      min="1"
+      step="1"
+      value="1000"
+    />
+    messages
+  </div>
+  <input type="button" id="btn-run" value="Run" />
+  <pre id="log"></pre>
+  <h4>Wasm (<a target="_blank" href="https://docs.rs/mcap/latest/mcap/read/struct.MessageStream.html">Rust MessageStream</a>)</h4>
+  <pre id="wasm-result"></pre>
+  <h4>JS (<a target="_blank" href="https://mcap.dev/docs/typescript/classes/_mcap_core.McapStreamReader.html">McapStreamReader</a>)</h4>
+  <pre id="stream-reader-result"></pre>
+  <h4>JS (<a target="_blank" href="https://mcap.dev/docs/typescript/classes/_mcap_core.McapIndexedReader.html">McapIndexedReader</a>)</h4>
+  <pre id="default-result"></pre>
+</html>
