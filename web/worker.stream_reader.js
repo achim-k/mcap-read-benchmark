@@ -6,12 +6,12 @@ console.log("Loading stream reader worker");
 
 self.onmessage = async (event) => {
   const decompressHandlers = await decompressHandlersPromise;
-  const { fileContent, bytesReadForProgressUpdate } = event.data;
+  const { fileContent, bytesReadForProgressUpdate, validateCrcs } = event.data;
   const totalStart = self.performance.now();
   const reader = new McapStreamReader({
     includeChunks: false,
     decompressHandlers,
-    validateCrcs: false,
+    validateCrcs,
   });
   reader.append(fileContent);
 

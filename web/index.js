@@ -7,6 +7,7 @@ const jsStreamReaderWorker = new Worker(new URL('./worker.stream_reader.js', imp
 const filePicker = document.getElementById("file-picker");
 const btnRun = document.getElementById("btn-run");
 const chbxSequential = document.getElementById("checkbox-sequential");
+const chbxValidateCrc = document.getElementById("checkbox-validate-crc");
 const wasmResultOutput = document.getElementById("wasm-result");
 const jsIndexedReaderOutput = document.getElementById("default-result");
 const jsStreamReaderResultOutput = document.getElementById("stream-reader-result");
@@ -21,7 +22,7 @@ const workers = [
   { worker: jsIndexedReaderWorker, print: (val) => jsIndexedReaderOutput.innerHTML = JSON.stringify(val), },
 ];
 const runElements = [
-  btnRun, chbxSequential, inputProgressMegaBytes, inputWasmBatchSize,
+  btnRun, chbxSequential, chbxValidateCrc, inputProgressMegaBytes, inputWasmBatchSize,
 ];
 
 async function read_file_into_uint8_array(file) {
@@ -61,9 +62,10 @@ btnRun.onclick = async () => {
     });
   });
   const runSequential = chbxSequential.checked;
+  const validateCrcs = chbxValidateCrc.checked;
   const bytesReadForProgressUpdate = inputProgressMegaBytes.value * 1024 * 1024;
   const wasmMsgBulkSize = inputWasmBatchSize.value;
-  const msgToWorkers = {fileContent, bytesReadForProgressUpdate, wasmMsgBulkSize };
+  const msgToWorkers = {fileContent, bytesReadForProgressUpdate, wasmMsgBulkSize, validateCrcs };
   if (runSequential) {
     for (let i = 0; i < workers.length; i++) {
       const {worker, print} = workers[i];
@@ -86,10 +88,6 @@ btnRun.onclick = async () => {
 
   runElements.forEach(element => element.disabled = false);
 }
-
-
-
-
 
 wasmWorker.onmessage = (msg) => { wasmResultOutput.innerHTML = JSON.stringify(msg.data); };
 jsIndexedReaderWorker.onmessage = (msg) => { jsIndexedReaderOutput.innerHTML = JSON.stringify(msg.data); };

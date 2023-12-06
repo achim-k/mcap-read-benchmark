@@ -24,7 +24,7 @@ console.log("IndexedReader Worker initialized");
 
 self.onmessage = async (event) => {
   const decompressHandlers = await decompressHandlersPromise;
-  const { fileContent, bytesReadForProgressUpdate } = event.data;
+  const { fileContent, bytesReadForProgressUpdate, validateCrcs } = event.data;
   const totalStart = self.performance.now();
   const readableBuffer = new McapReadableBuffer(fileContent);
   const reader = await McapIndexedReader.Initialize({
@@ -39,7 +39,7 @@ self.onmessage = async (event) => {
   const readStart = self.performance.now();
 
   for await (const message of reader.readMessages({
-    validateCrcs: false,
+    validateCrcs,
   })) {
     ++numMsgs;
     bytesRead += message.data.length;
