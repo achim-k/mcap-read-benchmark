@@ -1,28 +1,47 @@
-// import * as wasm from "read_mcap_wasm";
-
-const wasmWorker = new Worker(new URL('./worker.wasm.js', import.meta.url));
-const jsIndexedReaderWorker = new Worker(new URL('./worker.indexed_reader.js', import.meta.url));
-const jsStreamReaderWorker = new Worker(new URL('./worker.stream_reader.js', import.meta.url));
+const wasmWorker = new Worker(new URL("./worker.wasm.js", import.meta.url));
+const jsIndexedReaderWorker = new Worker(
+  new URL("./worker.indexed_reader.js", import.meta.url)
+);
+const jsStreamReaderWorker = new Worker(
+  new URL("./worker.stream_reader.js", import.meta.url)
+);
 
 const filePicker = document.getElementById("file-picker");
 const btnRun = document.getElementById("btn-run");
-const chbxSequential = document.getElementById("checkbox-sequential");
+const chbxParallel = document.getElementById("checkbox-parallel");
 const chbxValidateCrc = document.getElementById("checkbox-validate-crc");
-const wasmResultOutput = document.getElementById("wasm-result");
-const jsIndexedReaderOutput = document.getElementById("default-result");
-const jsStreamReaderResultOutput = document.getElementById("stream-reader-result");
-const inputProgressMegaBytes = document.getElementById("progress-update-after-mb-read");
+const inputProgressMegaBytes = document.getElementById(
+  "progress-update-after-mb-read"
+);
 const inputWasmBatchSize = document.getElementById("wasm-fetch-messages-count");
+const inputNumRuns = document.getElementById("num-runs");
 const logElement = document.getElementById("log");
-const log = (val) => logElement.innerHTML = val;
+const log = (val) => (logElement.innerHTML = val);
 
-const workers = [
-  { worker: wasmWorker, print: (val) => wasmResultOutput.innerHTML = JSON.stringify(val), },
-  { worker: jsStreamReaderWorker, print: (val) => jsStreamReaderResultOutput.innerHTML = JSON.stringify(val), },
-  { worker: jsIndexedReaderWorker, print: (val) => jsIndexedReaderOutput.innerHTML = JSON.stringify(val), },
+const AVAILABLE_READERS = [
+  {
+    name: "WasmReader",
+    worker: wasmWorker,
+    containerId: "wasm-reader",
+  },
+  {
+    name: "StreamReader",
+    worker: jsStreamReaderWorker,
+    containerId: "js-stream-reader",
+  },
+  {
+    name: "IndexedReader",
+    worker: jsIndexedReaderWorker,
+    containerId: "js-indexed-reader",
+  },
 ];
-const runElements = [
-  btnRun, chbxSequential, chbxValidateCrc, inputProgressMegaBytes, inputWasmBatchSize,
+
+const RUN_CONFIG_ELEMENTS = [
+  btnRun,
+  chbxParallel,
+  chbxValidateCrc,
+  inputProgressMegaBytes,
+  inputWasmBatchSize,
 ];
 
 async function read_file_into_uint8_array(file) {
@@ -35,60 +54,118 @@ async function read_file_into_uint8_array(file) {
   return new Uint8Array(reader.result);
 }
 
+const median = (arr) => {
+  return arr.slice().sort((a, b) => a - b)[Math.floor(arr.length / 2)];
+};
+
 btnRun.onclick = async () => {
   const file = filePicker.files[0];
   if (file == undefined) {
     log("No file");
     return;
-  } else if (file.size > 1e9) {
-    log("File too large");
+  } else if (file.size > 1.5e9) {
+    log("File too large (must fit into memory)");
     return;
   }
-  runElements.forEach(element => element.disabled = true);
+  RUN_CONFIG_ELEMENTS.forEach((element) => (element.disabled = true));
 
-  log("Reading file into buffer");
+  log("Reading file into buffer...");
   const fileContent = await read_file_into_uint8_array(file);
   log("");
 
-  const donePromises = workers.map(({worker, print}) => {
-    return new Promise((resolve) => {
-      worker.onmessage = (msg) => {
-        const { finished, ...rest } = msg.data;
-        print(rest);
-        if (finished) {
-          resolve(rest);
-        }
-      }
-    });
-  });
-  const runSequential = chbxSequential.checked;
+  const runParallel = chbxParallel.checked;
   const validateCrcs = chbxValidateCrc.checked;
   const bytesReadForProgressUpdate = inputProgressMegaBytes.value * 1024 * 1024;
   const wasmMsgBulkSize = inputWasmBatchSize.value;
-  const msgToWorkers = {fileContent, bytesReadForProgressUpdate, wasmMsgBulkSize, validateCrcs };
-  if (runSequential) {
-    for (let i = 0; i < workers.length; i++) {
-      const {worker, print} = workers[i];
-      print("Reading file...");
-      worker.postMessage(msgToWorkers);
+  const numRuns = inputNumRuns.value;
+  const readers = AVAILABLE_READERS.filter(
+    ({ containerId }) =>
+      document.querySelector(`#${containerId} input[type="checkbox"]`).checked
+  ).map((reader) => {
+    const outputElement = document.querySelector(`#${reader.containerId} pre`);
+    return {
+      ...reader,
+      print: (value) => {
+        outputElement.innerHTML = JSON.stringify(value);
+      },
+    };
+  });
+  const msgToWorkers = {
+    fileContent,
+    bytesReadForProgressUpdate,
+    wasmMsgBulkSize,
+    validateCrcs,
+  };
 
-      for (let j = i; j < workers.length; j++) {
-        workers[j].print("Waiting for previous worker to finish...");
-      }
-
-      await donePromises[i];
-    }
-  } else {
-    workers.forEach(({worker, print}) => {
-      print("Reading file...");
-      worker.postMessage(msgToWorkers);
+  let runResults = {};
+  for (let run = 0; run < numRuns; run++) {
+    const donePromises = readers.map(({ worker, print }) => {
+      return new Promise((resolve, reject) => {
+        worker.onerror = (err) => {
+          print(err);
+          reject(err);
+        };
+        worker.onmessage = (msg) => {
+          const { finished, ...rest } = msg.data;
+          print(rest);
+          if (finished) {
+            resolve(rest);
+          }
+        };
+      });
     });
-    await Promise.all(donePromises);
+
+    if (!runParallel) {
+      for (let i = 0; i < readers.length; i++) {
+        const { name, worker, print } = readers[i];
+        print("");
+        worker.postMessage(msgToWorkers);
+
+        for (let j = i; j < readers.length; j++) {
+          readers[j].print("Waiting for previous worker to finish...");
+        }
+
+        try {
+          const { totalDuration } = await donePromises[i];
+          runResults[name] = (runResults[name] ?? []).concat(totalDuration);
+        } catch (err) {
+          log(err);
+          break;
+        }
+      }
+    } else {
+      readers.forEach(({ worker, print }) => {
+        print("");
+        worker.postMessage(msgToWorkers);
+      });
+
+      try {
+        const workerResults = await Promise.all(donePromises);
+        workerResults.forEach(({ totalDuration }, idx) => {
+          const name = readers[idx].name;
+          runResults[name] = (runResults[name] ?? []).concat(totalDuration);
+        });
+      } catch (err) {
+        log(err);
+        break;
+      }
+    }
+
+    const timings = Object.entries(runResults).map(([name, arr]) => ({
+      name,
+      min: Math.min(...arr),
+      max: Math.max(...arr),
+      median: median(arr),
+    }));
+
+    log(
+      JSON.stringify(
+        { file: file.name, numRuns, timings, run: run + 1 },
+        null,
+        2
+      )
+    );
   }
 
-  runElements.forEach(element => element.disabled = false);
-}
-
-wasmWorker.onmessage = (msg) => { wasmResultOutput.innerHTML = JSON.stringify(msg.data); };
-jsIndexedReaderWorker.onmessage = (msg) => { jsIndexedReaderOutput.innerHTML = JSON.stringify(msg.data); };
-jsStreamReaderWorker.onmessage = (msg) => { jsStreamReaderResultOutput.innerHTML = JSON.stringify(msg.data); };
+  RUN_CONFIG_ELEMENTS.forEach((element) => (element.disabled = false));
+};
