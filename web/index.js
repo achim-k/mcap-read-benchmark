@@ -42,6 +42,7 @@ const RUN_CONFIG_ELEMENTS = [
   chbxValidateCrc,
   inputProgressMegaBytes,
   inputWasmBatchSize,
+  inputNumRuns
 ];
 
 async function read_file_into_uint8_array(file) {
@@ -90,13 +91,15 @@ btnRun.onclick = async () => {
       },
     };
   });
+
+  readers.forEach(({ worker }) => worker.postMessage({cmd: "init", fileContent}));
+
   const msgToWorkers = {
-    fileContent,
+    cmd: "run",
     bytesReadForProgressUpdate,
     wasmMsgBulkSize,
     validateCrcs,
   };
-
   let runResults = {};
   for (let run = 0; run < numRuns; run++) {
     const donePromises = readers.map(({ worker, print }) => {
@@ -115,19 +118,16 @@ btnRun.onclick = async () => {
       });
     });
 
+
     if (!runParallel) {
       for (let i = 0; i < readers.length; i++) {
         const { name, worker, print } = readers[i];
         print("");
         worker.postMessage(msgToWorkers);
 
-        for (let j = i; j < readers.length; j++) {
-          readers[j].print("Waiting for previous worker to finish...");
-        }
-
         try {
-          const { totalDuration } = await donePromises[i];
-          runResults[name] = (runResults[name] ?? []).concat(totalDuration);
+          const { duration } = await donePromises[i];
+          runResults[name] = (runResults[name] ?? []).concat(duration);
         } catch (err) {
           log(err);
           break;
@@ -141,9 +141,9 @@ btnRun.onclick = async () => {
 
       try {
         const workerResults = await Promise.all(donePromises);
-        workerResults.forEach(({ totalDuration }, idx) => {
+        workerResults.forEach(({ duration }, idx) => {
           const name = readers[idx].name;
-          runResults[name] = (runResults[name] ?? []).concat(totalDuration);
+          runResults[name] = (runResults[name] ?? []).concat(duration);
         });
       } catch (err) {
         log(err);

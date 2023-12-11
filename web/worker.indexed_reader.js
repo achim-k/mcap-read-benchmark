@@ -22,10 +22,10 @@ class McapReadableBuffer {
 const decompressHandlersPromise = loadDecompressHandlers();
 console.log("IndexedReader Worker initialized");
 
-self.onmessage = async (event) => {
+let fileContent;
+
+async function run(bytesReadForProgressUpdate, validateCrcs) {
   const decompressHandlers = await decompressHandlersPromise;
-  const { fileContent, bytesReadForProgressUpdate, validateCrcs } = event.data;
-  const totalStart = self.performance.now();
   const readableBuffer = new McapReadableBuffer(fileContent);
   const reader = await McapIndexedReader.Initialize({
     readable: readableBuffer,
@@ -52,19 +52,34 @@ self.onmessage = async (event) => {
         finished: false,
         numMsgs,
         bytesRead: bytesRead.toExponential(2),
-        durationSinceReadStart: ((now - readStart) / 1000).toFixed(2),
-        totalDuration: ((now - totalStart) / 1000).toFixed(2),
+        duration: ((now - readStart) / 1000).toFixed(2),
       });
       bytesReadReset = 0;
     }
   }
 
   const end = performance.now();
-  self.postMessage({
-    finished: true,
+  return {
     numMsgs,
     bytesRead: bytesRead.toExponential(2),
-    durationSinceReadStart: ((end - readStart) / 1000).toFixed(2),
-    totalDuration: ((end - totalStart) / 1000).toFixed(2),
-  });
+    duration: ((end - readStart) / 1000).toFixed(2),
+  };
+}
+
+self.onmessage = async (event) => {
+  if (event.data.cmd === "init") {
+    fileContent = event.data.fileContent;
+  } else if (event.data.cmd === "run") {
+    const { bytesReadForProgressUpdate, validateCrcs } = event.data;
+    const { numMsgs, bytesRead, duration } = await run(
+      bytesReadForProgressUpdate,
+      validateCrcs
+    );
+    self.postMessage({
+      finished: true,
+      numMsgs,
+      bytesRead,
+      duration,
+    });
+  }
 };

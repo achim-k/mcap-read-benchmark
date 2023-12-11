@@ -2,13 +2,13 @@ import * as wasm from "read_mcap_wasm";
 
 console.log("WASM Worker initialized");
 
-self.onmessage = async (event) => {
-  const { fileContent, bytesReadForProgressUpdate, wasmMsgBulkSize: batchSize } = event.data;
-  const totalStart = self.performance.now();
-  wasm.init(fileContent);
+let fileContent;
+
+async function run(bytesReadForProgressUpdate, batchSize) {
   let numMsgs = 0;
   let bytesRead = 0;
   let bytesReadReset = 0;
+  wasm.init(fileContent);
   const readStart = self.performance.now();
   let msgs = wasm.read_messages(batchSize);
   while (msgs.length > 0) {
@@ -24,8 +24,7 @@ self.onmessage = async (event) => {
         finished: false,
         numMsgs,
         bytesRead: bytesRead.toExponential(2),
-        durationSinceReadStart: ((now - readStart) / 1000).toFixed(2),
-        totalDuration: ((now - totalStart) / 1000).toFixed(2),
+        duration: ((now - readStart) / 1000).toFixed(2),
       });
       bytesReadReset = 0;
     }
@@ -35,13 +34,21 @@ self.onmessage = async (event) => {
   }
 
   const now = performance.now();
-  const durationSinceStart = ((now - totalStart) / 1000).toFixed(2);
-  const durationSinceReadStart = ((now - readStart) / 1000).toFixed(2);
-  self.postMessage({
-    finished: true,
-    numMsgs,
-    bytesRead: bytesRead.toExponential(2),
-    durationSinceReadStart,
-    totalDuration: durationSinceStart,
-  });
+  const duration = ((now - readStart) / 1000).toFixed(2);
+  return {numMsgs, bytesRead, duration};
+}
+
+self.onmessage = async (event) => {
+  if (event.data.cmd === "init") {
+    fileContent = event.data.fileContent;
+  } else if (event.data.cmd === "run") {
+    const { bytesReadForProgressUpdate, wasmMsgBulkSize } = event.data;
+    const {numMsgs, bytesRead, duration} = await run(bytesReadForProgressUpdate, wasmMsgBulkSize);
+    self.postMessage({
+      finished: true,
+      numMsgs,
+      bytesRead: bytesRead.toExponential(2),
+      duration,
+    });
+  }
 };
